@@ -197,7 +197,7 @@ export default class Purrf {
 		}
 
 		return {
-			type: this._getEntryType(),
+			type: this._getEntryType(entry),
 			performance: {
 				url: entry.name,
 				start: entry.startTime,
