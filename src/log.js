@@ -1,22 +1,42 @@
 import Cloudwatch from 'aws-sdk/clients/cloudwatchlogs';
 
-const Logger = (({
-	region,
-	logGroup,
-	logStream,
-	accessKeyId,
-	secretAccessKey
-} = {}) => {
-	let SEQUENCE_TOKEN = null;
-
-	const client = new Cloudwatch({
-		apiVersion: '2014-03-28',
-		region,
-		credentials: {
+export default class Logger {
+	constructor(
+		{
+			region,
+			logGroup,
+			logStream,
 			accessKeyId,
 			secretAccessKey
-		}
-	});
+		} = {}) {
+		this._region = region;
+		this._logGroup = logGroup;
+		this._logStream = logStream;
+		this._accessKeyId = accessKeyId;
+		this._secretAccessKey = secretAccessKey;
+
+		this._token = this.token;
+	}
+
+	get token() {
+		return localStorage.getItem('cw_token');
+	}
+
+	set token(token) {
+		localStorage.setItem('cw_token', token);
+		this._token = token;
+	}
+
+	client() {
+		return new Cloudwatch({
+			apiVersion: '2014-03-28',
+			region: this._region,
+			credentials: {
+				accessKeyId: this._accessKeyId,
+				secretAccessKey: this._secretAccessKey
+			}
+		});
+	}
 
 	/**
      * Log data to AWS CloudWatch.
@@ -29,11 +49,16 @@ const Logger = (({
      *
      * @returns {Promise<object>}
      */
-	const log = async (events = []) => {
+	async log(events = []) {
+		if (!events.length > 0) {
+			return;
+		}
+
 		const logEvents = events.map(event => ({
 			message: JSON.stringify({
 				entry: 'Performance',
 				type: event.type,
+				name: event.info.name,
 				device: event.device,
 				performance: event.performance,
 				info: event.info
@@ -43,19 +68,19 @@ const Logger = (({
 
 		const parameters = {
 			logEvents,
-			logGroup,
-			logStream
+			logGroupName: this._logGroup,
+			logStreamName: this._logStream
 		};
 
-		if (SEQUENCE_TOKEN) {
-			parameters.sequenceToken = SEQUENCE_TOKEN;
+		if (this._token) {
+			parameters.sequenceToken = this._token;
 		}
 
 		return new Promise(resolve => {
 			try {
 				// Create a new log event using `putLogEvents()`.
 				// https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/CloudWatchLogs.html#putLogEvents-property
-				client.putLogEvents(parameters, (error, data) => {
+				this.client().putLogEvents(parameters, (error, data) => {
 					// If the request fails, it's most likely due to the wrong
 					// sequence token, so we need to parse the error message
 					// to get the correct token.
@@ -68,15 +93,19 @@ const Logger = (({
 						// item 1, so we can use destructuring to save the new token.
 						// Notice the comma is taking up item 0.
 						[,
-							SEQUENCE_TOKEN] = error.message.match(/The next expected sequenceToken is: (\w+)/);
+							this._token] = error.message.match(/The next expected sequenceToken is: (\w+)/);
 
 						// Now that we have the correct token,
 						// we can resolve our promise with a new promise.
 						resolve(
-							log({events})
+							this.log(events)
 						);
+					} else if (error) {
+						throw new Error(error);
 					} else {
-						SEQUENCE_TOKEN = data.nextSequenceToken;
+						console.log(`Successfully logged ${events.length} performance entries 🎉`);
+
+						this.token = data.nextSequenceToken;
 						resolve(data);
 					}
 				});
@@ -84,12 +113,5 @@ const Logger = (({
 				throw new Error(error);
 			}
 		});
-	};
-
-	return {
-		client,
-		log
-	};
-})();
-
-export default Logger;
+	}
+}

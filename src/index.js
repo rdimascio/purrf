@@ -1,16 +1,17 @@
-/* eslint-disable no-undef, unicorn/no-nested-ternary, unicorn/explicit-length-check, unicorn/no-fn-reference-in-iterator, new-cap, import/no-anonymous-default-export */
-
 import Logger from './log';
+import autoBind from 'auto-bind';
 
-export default class {
+export default class Purrf {
 	constructor({include = [], exclude = [], config = {}} = {}) {
+		autoBind(this);
+
 		this._config = config;
 		this._include = include;
 		this._exclude = exclude;
 
 		this._logger = console;
 
-		if (Object.keys(this._config).length) {
+		if (Object.keys(this._config).length > 0) {
 			this.config();
 		}
 
@@ -19,6 +20,7 @@ export default class {
 	}
 
 	/**
+	 * Configure AWS CloudWatch credentials.
 	 * @returns {object}
 	 */
 	config() {
@@ -31,7 +33,7 @@ export default class {
 		} = this._config;
 
 		if (region && logGroup && logStream && accessKeyId && secretAccessKey) {
-			this._logger = Logger({
+			this._logger = new Logger({
 				region,
 				logGroup,
 				logStream,
@@ -44,22 +46,26 @@ export default class {
 	}
 
 	/**
+	 * Get all PerformanceEntries.
 	 * @returns {object}
 	 */
 	start() {
 		this._logger.log(
-			window.performance.getEntriesByType('resource').map(this._processEntry)
+			window.performance.getEntriesByType('resource').map(
+				entry => this._processEntry(entry)
+			)
 		);
 
 		return this;
 	}
 
 	/**
+	 * Observe new resource PerformanceEntries.
 	 * @returns {object}
 	 */
 	watch() {
 		const PERFORMANCE_OBSERVER = new PerformanceObserver(
-			this._handlePerformanceEntries
+			list => this._handlePerformanceEntries(list)
 		);
 
 		PERFORMANCE_OBSERVER.observe({type: 'resource'});
@@ -67,27 +73,116 @@ export default class {
 		return this;
 	}
 
-	// Private methods
+	/**
+	 * Measure a custom mark against a resource PerformanceEntry.
+	 * @param {string} name - Unique namefor measurement.
+	 * @param {string} url - URL of the resource PerformanceEntry.
+	 */
+	measure(name, url) {
+		const now = performance.now();
+		const resource = this._getEntryByName(url);
 
+		if (!resource) {
+			throw new ReferenceError(`${url} is not a valid PerformanceEntry`);
+		}
+
+		const start = resource.startTime;
+		const end =
+			resource.entryType === 'resource' ?
+				resource.responseEnd :
+				resource.startTime + resource.duration;
+
+		this._logger.log({
+			entry: 'Performance',
+			type: 'Custom',
+			name,
+			device: this._getDeviceInfo(),
+			performance: {
+				url,
+				start,
+				end: now,
+				duration: {
+					total: now - start,
+					response: now - end
+				}
+			}
+		});
+
+		return this;
+	}
+
+	/**
+	 * Get a PerformanceEntry by name.
+	 * @param {string} name - A PerformanceEntry name.
+	 */
+	_getEntryByName(name) {
+		return window.performance
+			.getEntries()
+			.filter(entry => entry.name === name)[0];
+	}
+
+	_getEntryType(entry) {
+		const imageExtensions = ['jpg', 'jpeg', 'png', 'svg', 'gif'];
+
+		const entryTypes = {
+			xmlhttprequest: 'XML',
+			fetch: 'XML',
+			img: 'Image',
+			link: 'Style',
+			css: 'Style',
+			script: 'Script'
+		};
+
+		const entryExtension = entry.name.split('.').pop();
+
+		if (imageExtensions.includes(entryExtension)) {
+			return entryTypes.img;
+		}
+
+		return entryTypes[entry.initiatorType] || 'Other';
+	}
+
+	/**
+	 * Get browser data from `window.navigator`
+	 * @returns {object}
+	 */
+	_getDeviceInfo() {
+		return {
+			agent: window.navigator.userAgent,
+			online: window.navigator.onLine,
+			connection: window.navigator.connection.effectiveType,
+			cookies: window.navigator.cookieEnabled,
+			language: window.navigator.language,
+			ram: window.navigator.deviceMemory ?? undefined,
+			cpu: window.navigator.hardwareConcurrency ?? undefined
+		};
+	}
+
+	/**
+	 * Callback for PerformanceObserver.
+	 * @param {*} list - PerformanceObserverEntryList.
+	 */
 	_handlePerformanceEntries(list) {
-		this._logger.log(list.getEntries().map(this._processEntry));
+		this._logger.log(list.getEntries()
+			.map(entry => this._processEntry(entry))
+			.filter(Boolean));
 	}
 
 	/**
 	 * Process the performance entry.
-	 * @param {object} entry - A PerformanceEntry object
+	 * @param {object} entry - A PerformanceEntry object.
 	 * @returns {object}
 	 */
 	_processEntry(entry) {
 		// If the `include` argument exists, exclude everything except
 		// the URLs that are included.
-		if (this._include.length && !this._include.includes(entry.name)) {
+		if (this._include.length > 0 && !this._include.includes(entry.name)) {
 			return;
 		}
 
 		// If the `exclude` argument exists, include everything except
 		// the URLs that are excluded.
-		if (this._exclude.length && this._exclude.includes(entry.name)) {
+		if (this._exclude.length > 0 && this._exclude.includes(entry.name)) {
 			return;
 		}
 
@@ -97,29 +192,12 @@ export default class {
 		}
 
 		// Don't include requests to AWS CloudWatch
-		if (
-			Object.prototype.hasOwnProperty.call(this._logger, 'client') &&
-			entry.name === `https://logs.${this._config.region}.amazonaws.com/`
-		) {
+		if (entry.name === `https://logs.${this._config.region}.amazonaws.com/`) {
 			return;
 		}
 
 		return {
-			type:
-				entry.initiatorType === 'xmlhttprequest' ||
-				entry.initiatorType === 'fetch' ?
-					'XML' :
-					entry.initiatorType === 'img' ||
-                        entry.name.includes('.jpg') ||
-                        entry.name.includes('.jpeg') ||
-                        entry.name.includes('.png') ||
-                        entry.name.includes('.svg') ?
-						'Image' :
-						entry.initiatorType === 'link' || entry.initiatorType === 'css' ?
-							'Style' :
-							entry.initiatorType === 'script' ?
-								'Script' :
-								'Other',
+			type: this._getEntryType(),
 			performance: {
 				url: entry.name,
 				start: entry.startTime,
@@ -130,14 +208,7 @@ export default class {
 					end: entry.responseEnd
 				}
 			},
-			device: {
-				agent: window.navigator.userAgent,
-				connection: window.navigator.connection.effectiveType,
-				cookies: window.navigator.cookieEnabled,
-				language: window.navigator.language,
-				ram: window.navigator.deviceMemory ?? undefined,
-				cpu: window.navigator.hardwareConcurrency ?? undefined
-			},
+			device: this._getDeviceInfo(),
 			info: entry
 		};
 	}
