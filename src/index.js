@@ -150,7 +150,7 @@ export default class Purrf {
 		return {
 			agent: window.navigator.userAgent,
 			online: window.navigator.onLine,
-			connection: window.navigator.connection.effectiveType,
+			connection: window.navigator.connection?.effectiveType ?? undefined,
 			cookies: window.navigator.cookieEnabled,
 			language: window.navigator.language,
 			ram: window.navigator.deviceMemory ?? undefined,
