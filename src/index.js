@@ -51,9 +51,9 @@ export default class Purrf {
 	 */
 	start() {
 		this._logger.log(
-			window.performance.getEntriesByType('resource').map(
-				entry => this._processEntry(entry)
-			)
+			window.performance
+				.getEntriesByType('resource')
+				.map(entry => this._processEntry(entry))
 		);
 
 		return this;
@@ -64,8 +64,8 @@ export default class Purrf {
 	 * @returns {object}
 	 */
 	watch() {
-		const PERFORMANCE_OBSERVER = new PerformanceObserver(
-			list => this._handlePerformanceEntries(list)
+		const PERFORMANCE_OBSERVER = new PerformanceObserver(list =>
+			this._handlePerformanceEntries(list)
 		);
 
 		PERFORMANCE_OBSERVER.observe({type: 'resource'});
@@ -80,7 +80,7 @@ export default class Purrf {
 	 */
 	measure(name, url) {
 		const now = performance.now();
-		const resource = this._getEntryByName(url);
+		const resource = this._getLatestEntryByName(url);
 
 		if (!resource) {
 			throw new ReferenceError(`${url} is not a valid PerformanceEntry`);
@@ -114,11 +114,27 @@ export default class Purrf {
 	/**
 	 * Get a PerformanceEntry by name.
 	 * @param {string} name - A PerformanceEntry name.
+	 * @returns {object}
 	 */
 	_getEntryByName(name) {
 		return window.performance
 			.getEntries()
 			.filter(entry => entry.name === name)[0];
+	}
+
+	/**
+	 * Get the latest PerformanceEntry by name.
+	 * @param {string} name - A PerformanceEntry name.
+	 * @returns {object}
+	 */
+	_getLatestEntryByName(name) {
+		return window.performance
+			.getEntriesByName(name)
+
+			// eslint-disable-next-line unicorn/no-reduce
+			.reduce((previous, current) =>
+				previous.startTime > current.startTime ? previous : current
+			);
 	}
 
 	_getEntryType(entry) {
@@ -163,9 +179,12 @@ export default class Purrf {
 	 * @param {*} list - PerformanceObserverEntryList.
 	 */
 	_handlePerformanceEntries(list) {
-		this._logger.log(list.getEntries()
-			.map(entry => this._processEntry(entry))
-			.filter(Boolean));
+		this._logger.log(
+			list
+				.getEntries()
+				.map(entry => this._processEntry(entry))
+				.filter(Boolean)
+		);
 	}
 
 	/**
