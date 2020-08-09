@@ -251,20 +251,30 @@ export default class Purrf {
 	_processEntry(entry) {
 		// If the `include` argument exists, exclude everything except
 		// the URLs that are included.
-		if (
-			this.params.include.length > 0 &&
-			!this.params.include.includes(entry.name)
-		) {
-			return;
+		if (this.params.include.length > 0) {
+			const match = this.params.include.some(inclusion =>
+				entry.name.includes(inclusion)
+			);
+
+			if (!match) {
+				return;
+			}
 		}
 
 		// If the `exclude` argument exists, include everything except
 		// the URLs that are excluded.
-		if (
-			this.params.exclude.length > 0 &&
-			this.params.exclude.includes(entry.name)
-		) {
-			return;
+		if (this.params.exclude.length > 0) {
+			if (this.params.exclude.includes(entry.name)) {
+				return;
+			}
+
+			const match = this.params.exclude.some(exclusion =>
+				entry.name.includes(exclusion)
+			);
+
+			if (match) {
+				return;
+			}
 		}
 
 		const message = (name, duration = entry.duration) =>
