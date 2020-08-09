@@ -64,9 +64,22 @@ export default class Purrf {
 	start() {
 		this.params.types.forEach(type => {
 			window.performance
-				.getEntriesByType(type)
+				.getEntriesByType(type.filter(type => type !== 'navigation'))
 				.map(entry => this._processEntry(entry))
 				.filter(Boolean)
+				.forEach(entry => {
+					this._logger.log(entry);
+				});
+		});
+
+		window.addEventListener('load', () => {
+			if (!this.params.types.includes('navigation')) {
+				return;
+			}
+
+			window.performance
+				.getEntriesByType('navigation')
+				.map(entry => this._processEntry(entry))
 				.forEach(entry => {
 					this._logger.log(entry);
 				});
@@ -246,8 +259,8 @@ export default class Purrf {
 			return;
 		}
 
-		const message = name =>
-			`${name} took ${round(entry.duration / 1000, 3)} seconds.`;
+		const message = (name, duration = entry.duration) =>
+			`${name} took ${round(duration / 1000, 3)} seconds.`;
 		const data = {
 			type: entry.entryType,
 			performance: {
@@ -297,6 +310,7 @@ export default class Purrf {
 					navigationType: entry.type,
 					performance: {
 						...data.performance,
+						size: entry.transferSize,
 						dom: {
 							complete: entry.domComplete,
 							contentLoaded: entry.domContentLoadedEventStart,
@@ -308,7 +322,7 @@ export default class Purrf {
 
 		if (entry.entryType === 'paint') {
 			return this.params.pretty ?
-				message(entry.name || window.location.href) :
+				message(entry.name || window.location.href, entry.startTime) :
 				data;
 		}
 	}
