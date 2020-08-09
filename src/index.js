@@ -62,15 +62,17 @@ export default class Purrf {
 	 * @returns {object}
 	 */
 	start() {
-		this.params.types.forEach(type => {
-			window.performance
-				.getEntriesByType(type.filter(type => type !== 'navigation'))
-				.map(entry => this._processEntry(entry))
-				.filter(Boolean)
-				.forEach(entry => {
-					this._logger.log(entry);
-				});
-		});
+		this.params.types
+			.filter(type => type !== 'navigation')
+			.forEach(type => {
+				window.performance
+					.getEntriesByType(type)
+					.map(entry => this._processEntry(entry))
+					.filter(Boolean)
+					.forEach(entry => {
+						this._logger.log(entry);
+					});
+			});
 
 		window.addEventListener('load', () => {
 			if (!this.params.types.includes('navigation')) {
