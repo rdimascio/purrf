@@ -134,10 +134,10 @@ export default class Purrf {
 			`"${name}" finished in ${round(
 				totalTime / 1000,
 				3
-			)} seconds. Response took ${round(
+			  )} seconds. Response took ${round(
 				responseTime / 1000,
 				3
-			  	)} seconds. Processing took ${round(processingTime / 1000, 3)} seconds.` :
+			  )} seconds. Processing took ${round(processingTime / 1000, 3)} seconds.` :
 			{
 				entry: 'Performance',
 				type: 'Custom',
@@ -178,7 +178,8 @@ export default class Purrf {
 	 */
 	_getLatestEntryByName(name) {
 		const entries = window.performance
-			.getEntriesByName(name);
+			.getEntries()
+			.filter(entry => entry.name.includes(name));
 
 		if (!entries) {
 			return null;
