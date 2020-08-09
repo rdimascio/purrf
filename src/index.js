@@ -1,21 +1,33 @@
+/* eslint-disable no-mixed-spaces-and-tabs */
+
 import Logger from './log';
+import round from './helpers/round';
 import autoBind from 'auto-bind';
 
 export default class Purrf {
-	constructor({include = [], exclude = [], config = {}} = {}) {
+	constructor(parameters) {
 		autoBind(this);
 
-		this._config = config;
-		this._include = include;
-		this._exclude = exclude;
+		const defaultParameters = {
+			include: [],
+			exclude: [],
+			config: {},
+			types: ['resource', 'navigation', 'paint'],
+			pretty: false
+		};
+
+		this.params = {
+			...defaultParameters,
+			...parameters
+		};
 
 		this._logger = console;
 
-		if (Object.keys(this._config).length > 0) {
+		if (Object.keys(this.params.config).length > 0) {
 			this.config();
 		}
 
-		this.start();
+		setTimeout(this.start);
 		this.watch();
 	}
 
@@ -30,7 +42,7 @@ export default class Purrf {
 			logStream,
 			accessKeyId,
 			secretAccessKey
-		} = this._config;
+		} = this.params.config;
 
 		if (region && logGroup && logStream && accessKeyId && secretAccessKey) {
 			this._logger = new Logger({
@@ -50,11 +62,15 @@ export default class Purrf {
 	 * @returns {object}
 	 */
 	start() {
-		this._logger.log(
+		this.params.types.forEach(type => {
 			window.performance
-				.getEntriesByType('resource')
+				.getEntriesByType(type)
 				.map(entry => this._processEntry(entry))
-		);
+				.filter(Boolean)
+				.forEach(entry => {
+					this._logger.log(entry);
+				});
+		});
 
 		return this;
 	}
@@ -79,6 +95,10 @@ export default class Purrf {
 	 * @param {string} url - URL of the resource PerformanceEntry.
 	 */
 	measure(name, url) {
+		if (!this.params.types.includes('resource')) {
+			return;
+		}
+
 		const now = performance.now();
 		const resource = this._getLatestEntryByName(url);
 
@@ -91,22 +111,36 @@ export default class Purrf {
 			resource.entryType === 'resource' ?
 				resource.responseEnd :
 				resource.startTime + resource.duration;
+		const totalTime = now - start;
+		const responseTime = resource.duration;
+		const processingTime = now - end;
 
-		this._logger.log({
-			entry: 'Performance',
-			type: 'Custom',
-			name,
-			device: this._getDeviceInfo(),
-			performance: {
-				url,
-				start,
-				end: now,
-				duration: {
-					total: now - start,
-					response: now - end
+		const message = this.params.pretty ?
+			`"${name}" finished in ${round(
+				totalTime / 1000,
+				3
+			)} seconds. Response took ${round(
+				responseTime / 1000,
+				3
+			  	)} seconds. Processing took ${round(processingTime / 1000, 3)} seconds.` :
+			{
+				entry: 'Performance',
+				type: 'Custom',
+				name,
+				device: this._getDeviceInfo(),
+				performance: {
+					url,
+					start,
+					end: now,
+					duration: {
+						total: totalTime,
+						response: responseTime,
+						processing: processingTime
+					}
 				}
-			}
-		});
+			  };
+
+		this._logger.log(message);
 
 		return this;
 	}
@@ -128,16 +162,18 @@ export default class Purrf {
 	 * @returns {object}
 	 */
 	_getLatestEntryByName(name) {
-		return window.performance
-			.getEntriesByName(name)
+		return (
+			window.performance
+				.getEntriesByName(name)
 
-			// eslint-disable-next-line unicorn/no-reduce
-			.reduce((previous, current) =>
-				previous.startTime > current.startTime ? previous : current
-			);
+				// eslint-disable-next-line unicorn/no-reduce
+				.reduce((previous, current) =>
+					previous.startTime > current.startTime ? previous : current
+				)
+		);
 	}
 
-	_getEntryType(entry) {
+	_getResourceEntryType(entry) {
 		const imageExtensions = ['jpg', 'jpeg', 'png', 'svg', 'gif'];
 
 		const entryTypes = {
@@ -179,12 +215,11 @@ export default class Purrf {
 	 * @param {*} list - PerformanceObserverEntryList.
 	 */
 	_handlePerformanceEntries(list) {
-		this._logger.log(
-			list
-				.getEntries()
-				.map(entry => this._processEntry(entry))
-				.filter(Boolean)
-		);
+		list
+			.getEntries()
+			.map(entry => this._processEntry(entry))
+			.filter(Boolean)
+			.forEach(entry => this._logger.log(entry));
 	}
 
 	/**
@@ -195,40 +230,86 @@ export default class Purrf {
 	_processEntry(entry) {
 		// If the `include` argument exists, exclude everything except
 		// the URLs that are included.
-		if (this._include.length > 0 && !this._include.includes(entry.name)) {
+		if (
+			this.params.include.length > 0 &&
+			!this.params.include.includes(entry.name)
+		) {
 			return;
 		}
 
 		// If the `exclude` argument exists, include everything except
 		// the URLs that are excluded.
-		if (this._exclude.length > 0 && this._exclude.includes(entry.name)) {
+		if (
+			this.params.exclude.length > 0 &&
+			this.params.exclude.includes(entry.name)
+		) {
 			return;
 		}
 
-		// Don't include any map files.
-		if (entry.name.includes('.map')) {
-			return;
-		}
-
-		// Don't include requests to AWS CloudWatch
-		if (entry.name === `https://logs.${this._config.region}.amazonaws.com/`) {
-			return;
-		}
-
-		return {
-			type: this._getEntryType(entry),
+		const message = name =>
+			`${name} took ${round(entry.duration / 1000, 3)} seconds.`;
+		const data = {
+			type: entry.entryType,
 			performance: {
 				url: entry.name,
 				start: entry.startTime,
-				duration: entry.duration,
-				size: entry.transferSize,
-				response: {
-					start: entry.responseStart,
-					end: entry.responseEnd
-				}
+				duration: entry.duration
 			},
 			device: this._getDeviceInfo(),
-			info: entry
+			info: entry.toJSON()
 		};
+
+		if (entry.entryType === 'resource') {
+			// Don't include any map files.
+			if (entry.name.includes('.map')) {
+				return;
+			}
+
+			// Don't include requests to AWS CloudWatch
+			if (
+				entry.name ===
+				`https://logs.${this.params.config.region}.amazonaws.com/`
+			) {
+				return;
+			}
+
+			return this.params.pretty ?
+				message(entry.name) :
+				{
+					...data,
+					resourceType: this._getResourceEntryType(entry),
+					performance: {
+						...data.performance,
+						size: entry.transferSize,
+						response: {
+							start: entry.responseStart,
+							end: entry.responseEnd
+						}
+					}
+				  };
+		}
+
+		if (entry.entryType === 'navigation') {
+			return this.params.pretty ?
+				message(entry.name || window.location.href) :
+				{
+					...data,
+					navigationType: entry.type,
+					performance: {
+						...data.performance,
+						dom: {
+							complete: entry.domComplete,
+							contentLoaded: entry.domContentLoadedEventStart,
+							interactive: entry.domInteractive
+						}
+					}
+				  };
+		}
+
+		if (entry.entryType === 'paint') {
+			return this.params.pretty ?
+				message(entry.name || window.location.href) :
+				data;
+		}
 	}
 }
