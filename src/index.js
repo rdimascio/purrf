@@ -177,10 +177,15 @@ export default class Purrf {
 	 * @returns {object}
 	 */
 	_getLatestEntryByName(name) {
-		return (
-			window.performance
-				.getEntriesByName(name)
+		const entries = window.performance
+			.getEntriesByName(name);
 
+		if (!entries) {
+			return null;
+		}
+
+		return (
+			entries
 				// eslint-disable-next-line unicorn/no-reduce
 				.reduce((previous, current) =>
 					previous.startTime > current.startTime ? previous : current
