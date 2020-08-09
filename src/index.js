@@ -27,6 +27,7 @@ export default class Purrf {
 			this.config();
 		}
 
+		window.addEventListener('load', this.onLoad);
 		setTimeout(this.start);
 		this.watch();
 	}
@@ -57,6 +58,17 @@ export default class Purrf {
 		return this;
 	}
 
+	onLoad() {
+		if (!this.params.types.includes('navigation')) {
+			return;
+		}
+
+		window.performance
+			.getEntriesByType('navigation')
+			.map(entry => this._processEntry(entry))
+			.forEach(entry => this._logger.log(entry));
+	}
+
 	/**
 	 * Get all PerformanceEntries.
 	 * @returns {object}
@@ -69,23 +81,8 @@ export default class Purrf {
 					.getEntriesByType(type)
 					.map(entry => this._processEntry(entry))
 					.filter(Boolean)
-					.forEach(entry => {
-						this._logger.log(entry);
-					});
+					.forEach(entry => this._logger.log(entry));
 			});
-
-		window.addEventListener('load', () => {
-			if (!this.params.types.includes('navigation')) {
-				return;
-			}
-
-			window.performance
-				.getEntriesByType('navigation')
-				.map(entry => this._processEntry(entry))
-				.forEach(entry => {
-					this._logger.log(entry);
-				});
-		});
 
 		return this;
 	}
