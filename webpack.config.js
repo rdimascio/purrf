@@ -17,7 +17,8 @@ module.exports = (env, argv) => {
 			hints: false
 		},
 		entry: [
-			'babel-polyfill',
+			'core-js/stable',
+			'regenerator-runtime/runtime',
 			path.resolve(__dirname, 'src/index.js')
 		],
 		output: {
