@@ -331,7 +331,10 @@ export default class Purrf {
 				message({
 					name: 'Document plus resources' || window.location.href,
 					duration: entry.domComplete,
-					text: `Document content took ${entry.domContentLoadedEventEnd}`
+					text: `Document content took ${round(
+						entry.domContentLoadedEventEnd / 1000,
+						3
+					)} seconds.`
 				  }) :
 				{
 					...data,
