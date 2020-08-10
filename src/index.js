@@ -66,12 +66,12 @@ export default class Purrf {
 			return;
 		}
 
-		setTimeout(
+		setTimeout(() => {
 			window.performance
 				.getEntriesByType('navigation')
 				.map(entry => this._processEntry(entry))
-				.forEach(entry => this._logger.log(entry))
-		);
+				.forEach(entry => this._logger.log(entry));
+		}, 1000);
 	}
 
 	/**
@@ -281,8 +281,10 @@ export default class Purrf {
 			}
 		}
 
-		const message = (name, duration = entry.duration) =>
-			`${name} took ${round(duration / 1000, 3)} seconds.`;
+		const message = ({name, duration = entry.duration, text = ''} = {}) =>
+			`${name} took ${round(duration / 1000, 3)} seconds.${
+				text ? ` ${text}` : ''
+			}`;
 		const data = {
 			type: entry.entryType,
 			performance: {
@@ -309,7 +311,7 @@ export default class Purrf {
 			}
 
 			return this.params.pretty ?
-				message(entry.name) :
+				message({name: entry.name}) :
 				{
 					...data,
 					resourceType: this._getResourceEntryType(entry),
@@ -326,7 +328,11 @@ export default class Purrf {
 
 		if (entry.entryType === 'navigation') {
 			return this.params.pretty ?
-				message(entry.name || window.location.href) :
+				message({
+					name: 'Document plus resources' || window.location.href,
+					duration: entry.domComplete,
+					text: `Document content took ${entry.domContentLoadedEventEnd}`
+				  }) :
 				{
 					...data,
 					readyState: document.readyState,
@@ -345,7 +351,10 @@ export default class Purrf {
 
 		if (entry.entryType === 'paint') {
 			return this.params.pretty ?
-				message(entry.name || window.location.href, entry.startTime) :
+				message({
+					name: entry.name || window.location.href,
+					duration: entry.startTime
+				  }) :
 				data;
 		}
 	}
