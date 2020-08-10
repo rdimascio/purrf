@@ -193,7 +193,7 @@ export default class Purrf {
 			entries
 				// eslint-disable-next-line unicorn/no-reduce
 				.reduce((previous, current) =>
-					previous.startTime > current.startTime ? previous : current
+					previous.responseEnd > current.responseEnd ? previous : current
 				)
 		);
 	}
