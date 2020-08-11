@@ -185,7 +185,7 @@ export default class Purrf {
 			.getEntries()
 			.filter(entry => entry.name.includes(name));
 
-		if (!entries) {
+		if (!entries || !entries.length > 0) {
 			return null;
 		}
 
