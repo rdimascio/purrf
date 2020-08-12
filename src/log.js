@@ -1,21 +1,30 @@
-import Cloudwatch from 'aws-sdk/clients/cloudwatchlogs';
+import {AwsClient} from 'aws4fetch';
 
 export default class Logger {
-	constructor(
-		{
-			region,
-			logGroup,
-			logStream,
-			accessKeyId,
-			secretAccessKey
-		} = {}) {
+	constructor({
+		region,
+		logGroup,
+		logStream,
+		accessKeyId,
+		secretAccessKey
+	} = {}) {
+		this._client = null;
 		this._region = region;
+		this._service = 'logs';
 		this._logGroup = logGroup;
 		this._logStream = logStream;
 		this._accessKeyId = accessKeyId;
 		this._secretAccessKey = secretAccessKey;
 
+		this.MAX_RETRY_COUNT = 3;
+
 		this._token = this.token;
+		this._client = new AwsClient({
+			accessKeyId,
+			secretAccessKey,
+			region,
+			service: this._service
+		});
 	}
 
 	get token() {
@@ -27,29 +36,35 @@ export default class Logger {
 		this._token = token;
 	}
 
-	client() {
-		return new Cloudwatch({
-			apiVersion: '2014-03-28',
-			region: this._region,
-			credentials: {
-				accessKeyId: this._accessKeyId,
-				secretAccessKey: this._secretAccessKey
-			}
-		});
+	get client() {
+		return this._client;
+	}
+
+	get headers() {
+		return {
+			'X-Amz-Target': 'Logs_20140328.PutLogEvents',
+			Accept: 'application/json',
+			'Content-Type': 'application/x-amz-json-1.1'
+		};
+	}
+
+	get url() {
+		return `https://${this._service}.${this._region}.amazonaws.com`;
 	}
 
 	/**
-     * Log data to AWS CloudWatch.
-     * @param {array} params - A list of objects with format:
-     *  {
-     *      type: <string>,
-     *      performance: <object>,
-     *      info: <object>
-     *  }
-     *
-     * @returns {Promise<object>}
-     */
-	async log(events = []) {
+	 * Log data to AWS CloudWatch.
+	 * @param {array} params - A list of objects with format:
+	 *  {
+	 *      type: <string>,
+	 * 		nam: <string>,
+	 *      performance: <object>,
+	 *      details: <object>
+	 *  }
+	 *
+	 * @returns {Promise<object>}
+	 */
+	async log(events = [], retryCount = 0) {
 		if (!events.length > 0) {
 			return;
 		}
@@ -58,60 +73,58 @@ export default class Logger {
 			message: JSON.stringify({
 				entry: 'Performance',
 				type: event.type,
-				name: event.info.name,
+				name: event.name,
 				device: event.device,
 				performance: event.performance,
-				info: event.info
+				details: event.details
 			}),
 			timestamp: Date.now()
 		}));
 
-		const parameters = {
+		const payload = {
 			logEvents,
 			logGroupName: this._logGroup,
 			logStreamName: this._logStream
 		};
 
 		if (this._token) {
-			parameters.sequenceToken = this._token;
+			payload.sequenceToken = this._token;
 		}
 
-		return new Promise(resolve => {
+		const options = await this.client.sign(this.url, {
+			headers: this.headers,
+			body: JSON.stringify(payload)
+		});
+
+		const putLogs = async resolve => {
 			try {
-				// Create a new log event using `putLogEvents()`.
-				// https://docs.aws.amazon.com/AWSJavaScriptSDK/latest/AWS/CloudWatchLogs.html#putLogEvents-property
-				this.client().putLogEvents(parameters, (error, data) => {
-					// If the request fails, it's most likely due to the wrong
-					// sequence token, so we need to parse the error message
-					// to get the correct token.
-					if (
-						error &&
-                        error.code === 'InvalidSequenceTokenException' &&
-                        error.message.includes('The next expected sequenceToken is')
-					) {
-						// `match()` returns an array, and our token is going to be
-						// item 1, so we can use destructuring to save the new token.
-						// Notice the comma is taking up item 0.
-						[,
-							this._token] = error.message.match(/The next expected sequenceToken is: (\w+)/);
+				const request = await fetch(options);
+				const response = await request.json();
 
-						// Now that we have the correct token,
-						// we can resolve our promise with a new promise.
-						resolve(
-							this.log(events)
-						);
-					} else if (error) {
-						throw new Error(error);
+				if (response.nextSequenceToken) {
+					console.log(
+						`Successfully logged ${events.length} performance entries 🎉`
+					);
+
+					this.token = response.nextSequenceToken;
+					resolve(response);
+				} else {
+					const token = response.expectedSequenceToken;
+
+					if (token) {
+						this.token = token;
+						resolve(this.log(events, ++retryCount));
 					} else {
-						console.log(`Successfully logged ${events.length} performance entries 🎉`);
-
-						this.token = data.nextSequenceToken;
-						resolve(data);
+						console.error(response);
 					}
-				});
+				}
 			} catch (error) {
 				throw new Error(error);
 			}
-		});
+		};
+
+		return retryCount > this.MAX_RETRY_COUNT ?
+			Promise.resolve(null) :
+			new Promise(putLogs);
 	}
 }

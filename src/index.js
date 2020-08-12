@@ -9,11 +9,15 @@ export default class Purrf {
 		autoBind(this);
 
 		const defaultParameters = {
-			include: [],
-			exclude: [],
-			config: {},
-			types: ['resource', 'navigation', 'paint'],
-			pretty: false
+			include: [], // {string[]}
+			exclude: [], // {string[]}
+			config: {}, // {object}
+			types: ['resource', 'navigation', 'paint'], // {string[]} - accepted values are: resource|navigation|paint
+
+			// if `!config`, this param will handle the format
+			// of the metrics when logging to the console.
+			format: 'json', // {string} - one of string|json|table|csv
+			log: true
 		};
 
 		this.params = {
@@ -21,15 +25,20 @@ export default class Purrf {
 			...parameters
 		};
 
-		this._logger = console;
-
-		if (Object.keys(this.params.config).length > 0) {
-			this.config();
-		}
+		this._entries = [];
+		this._hasLogged = false;
+		this._logger =
+			this.params.log && Object.keys(this.params.config).length > 0 ?
+				this.config() :
+				console;
 
 		setTimeout(this.start);
-		this.watch();
+		this._watch();
 	}
+
+	/**************************************/
+	/** ******* Private methods ************/
+	/**************************************/
 
 	/**
 	 * Configure AWS CloudWatch credentials.
@@ -44,68 +53,69 @@ export default class Purrf {
 			secretAccessKey
 		} = this.params.config;
 
-		if (region && logGroup && logStream && accessKeyId && secretAccessKey) {
-			this._logger = new Logger({
+		return region && logGroup && logStream && accessKeyId && secretAccessKey ?
+			new Logger({
 				region,
 				logGroup,
 				logStream,
 				accessKeyId,
 				secretAccessKey
-			});
-		}
-
-		return this;
-	}
-
-	onLoad() {
-		if (!this.params.types.includes('navigation')) {
-			return;
-		}
-
-		if (document.readyState !== 'complete') {
-			return;
-		}
-
-		setTimeout(() => {
-			window.performance
-				.getEntriesByType('navigation')
-				.map(entry => this._processEntry(entry))
-				.forEach(entry => this._logger.log(entry));
-		}, 1000);
+			  }) :
+			this._logger;
 	}
 
 	/**
-	 * Get all PerformanceEntries.
-	 * @returns {object}
+	 * Get all performance entries.
+	 * @returns {object[]}
 	 */
-	start() {
-		document.addEventListener('readystatechange', this.onLoad);
-
-		this.params.types
-			.filter(type => type !== 'navigation')
-			.forEach(type => {
-				window.performance
-					.getEntriesByType(type)
-					.map(entry => this._processEntry(entry))
-					.filter(Boolean)
-					.forEach(entry => this._logger.log(entry));
-			});
-
-		return this;
+	get entries() {
+		return this._entries;
 	}
 
 	/**
-	 * Observe new resource PerformanceEntries.
-	 * @returns {object}
+	 * Update performance entries.
+	 * @param {object[]} entries - A list of performance entries.
+	 * @returns {void}
 	 */
-	watch() {
-		const PERFORMANCE_OBSERVER = new PerformanceObserver(list =>
-			this._handlePerformanceEntries(list)
+	set entries(entries) {
+		const newSet = [...this._entries, ...entries];
+
+		this._entries = newSet.filter(
+			(entry, index, entries) =>
+				entries.findIndex(
+					item =>
+						item.name === entry.name &&
+						item.performance.start === entry.performance.start
+				) === index
+		);
+	}
+
+	getEntries() {
+		const response = {
+			string: this._formatMessage,
+			table: this._formatTable,
+			csv: this._formatCsv
+		};
+
+		const output = this.entries.map((entry, index) =>
+			response[this.params.format] ?
+				response[this.params.format](entry, index) :
+				entry
 		);
 
-		PERFORMANCE_OBSERVER.observe({type: 'resource'});
+		return this.params.format === 'csv' || this.params.format === 'string' ?
+			output.join('') :
+			output;
+	}
 
-		return this;
+	log() {
+		this._hasLogged = true;
+		this._logger[
+			Object.prototype.hasOwnProperty.call(this._logger, 'table') &&
+			this.params.format === 'table' ?
+				'table' :
+				'log'
+		](this.getEntries());
 	}
 
 	/**
@@ -118,50 +128,122 @@ export default class Purrf {
 			return;
 		}
 
-		const now = performance.now();
-		const resource = this._getLatestEntryByName(url);
+		const entry = this._getLatestEntryByName(url);
 
-		if (!resource) {
+		if (!entry) {
 			throw new ReferenceError(`${url} is not a valid PerformanceEntry`);
 		}
 
-		const start = resource.startTime;
-		const end =
-			resource.entryType === 'resource' ?
-				resource.responseEnd :
-				resource.startTime + resource.duration;
-		const totalTime = now - start;
-		const responseTime = resource.duration;
-		const processingTime = now - end;
-
-		const message = this.params.pretty ?
-			`"${name}" finished in ${round(
-				totalTime / 1000,
-				3
-			  )} seconds. Response took ${round(
-				responseTime / 1000,
-				3
-			  )} seconds. Processing took ${round(processingTime / 1000, 3)} seconds.` :
-			{
-				entry: 'Performance',
-				type: 'Custom',
+		this.entries = [
+			this._processCustomEntry({
 				name,
-				device: this._getDeviceInfo(),
-				performance: {
-					url,
-					start,
-					end: now,
-					duration: {
-						total: totalTime,
-						response: responseTime,
-						processing: processingTime
-					}
-				}
-			  };
+				entry,
+				url
+			})
+		];
 
-		this._logger.log(message);
+		if (this._hasLogged && this.params.log) {
+			this.log();
+		}
 
 		return this;
+	}
+
+	/**
+	 * Get all PerformanceEntries.
+	 * @returns {object}
+	 */
+	start() {
+		this.params.types
+			.filter(type => type !== 'navigation')
+			.forEach(type => {
+				this.entries = window.performance
+					.getEntriesByType(type)
+					.map(entry => this._processEntry(entry))
+					.filter(Boolean);
+			});
+
+		/* eslint-disable-next-line no-unused-expressions */
+		document.readyState === 'complete' ?
+			this._onLoad() :
+			document.addEventListener('readystatechange', this._onLoad);
+
+		return this;
+	}
+
+	/**************************************/
+	/** ******* Private methods ************/
+	/**************************************/
+
+	_formatCsv(entry, index) {
+		let message =
+			index === 0 ? 'Name, Duration, Request time, Render time\n' : '';
+
+		/* eslint-disable-next-line no-return-assign */
+		return (message += `${
+			entry.type === 'navigation' ? window.location.href : entry.name
+		}, ${this._round(
+			entry.type === 'paint' ?
+				entry.performance.start :
+				entry.performance.duration.total ?? entry.performance.duration
+		)}, ${
+			entry.type === 'custom' ?
+				this._round(entry.performance.duration.response) :
+				0
+		}, ${
+			entry.type === 'custom' ?
+				this._round(entry.performance.duration.render) :
+				0
+		}\n`);
+	}
+
+	_formatMessage(entry) {
+		if (entry.type === 'navigation') {
+			return `Document plus resources took ${this._round(
+				entry.performance.dom.complete
+			)} seconds. Document content took ${this._round(
+				entry.performance.dom.contentLoaded
+			)} seconds.\n`;
+		}
+
+		if (entry.type === 'custom') {
+			return `${entry.name} finished in ${this._round(
+				entry.performance.duration.total
+			)} seconds. Response took ${this._round(
+				entry.performance.duration.response
+			)} seonds. Render took ${this._round(
+				entry.performance.duration.render
+			)} seconds.\n`;
+		}
+
+		return `${entry.name || window.location.href} took ${this._round(
+			entry.type === 'paint' ?
+				entry.performance.start :
+				entry.performance.duration
+		)} seconds.\n`;
+	}
+
+	/* eslint-disable-next-line no-unused-vars */
+	_formatTable(entry, index) {
+		const data = {
+			name: entry.type === 'navigation' ? window.location.href : entry.name,
+			duration: this._round(
+				entry.type === 'paint' ?
+					entry.performance.start :
+					entry.performance.duration
+			)
+		};
+
+		const customData = {
+			duration: this._round(entry.performance.duration.total),
+			response: this._round(entry.performance.duration.response),
+			render: this._round(entry.performance.duration.render)
+		};
+
+		return {
+			...data,
+			...(entry.type === 'custom' ? customData : {})
+		};
 	}
 
 	/**
@@ -202,8 +284,8 @@ export default class Purrf {
 		const imageExtensions = ['jpg', 'jpeg', 'png', 'svg', 'gif'];
 
 		const entryTypes = {
-			xmlhttprequest: 'XML',
-			fetch: 'XML',
+			xmlhttprequest: 'XHR',
+			fetch: 'XHR',
 			img: 'Image',
 			link: 'Style',
 			css: 'Style',
@@ -240,11 +322,54 @@ export default class Purrf {
 	 * @param {*} list - PerformanceObserverEntryList.
 	 */
 	_handlePerformanceEntries(list) {
-		list
+		this.entries = list
 			.getEntries()
 			.map(entry => this._processEntry(entry))
-			.filter(Boolean)
-			.forEach(entry => this._logger.log(entry));
+			.filter(Boolean);
+	}
+
+	_onLoad() {
+		if (document.readyState !== 'complete') {
+			return;
+		}
+
+		setTimeout(() => {
+			this.entries = window.performance
+				.getEntriesByType('navigation')
+				.map(entry => this._processEntry(entry));
+
+			if (this.params.log) {
+				this.log();
+			}
+		}, 1000);
+	}
+
+	_processCustomEntry({entry, name, url} = {}) {
+		const now = performance.now();
+		const start = entry.startTime;
+		const end =
+			entry.entryType === 'resource' ?
+				entry.responseEnd :
+				entry.startTime + entry.duration;
+		const totalTime = now - start;
+		const responseTime = entry.duration;
+		const renderTime = now - end;
+
+		return {
+			type: 'custom',
+			name,
+			device: this._getDeviceInfo(),
+			performance: {
+				url,
+				start,
+				end: now,
+				duration: {
+					total: totalTime,
+					response: responseTime,
+					render: renderTime
+				}
+			}
+		};
 	}
 
 	/**
@@ -281,19 +406,15 @@ export default class Purrf {
 			}
 		}
 
-		const message = ({name, duration = entry.duration, text = ''} = {}) =>
-			`${name} took ${round(duration / 1000, 3)} seconds.${
-				text ? ` ${text}` : ''
-			}`;
 		const data = {
-			type: entry.entryType,
-			performance: {
-				url: entry.name,
-				start: entry.startTime,
-				duration: entry.duration
-			},
+			details: entry.toJSON(),
 			device: this._getDeviceInfo(),
-			info: entry.toJSON()
+			name: entry.name,
+			performance: {
+				duration: entry.duration,
+				start: entry.startTime
+			},
+			type: entry.entryType
 		};
 
 		if (entry.entryType === 'resource') {
@@ -310,55 +431,58 @@ export default class Purrf {
 				return;
 			}
 
-			return this.params.pretty ?
-				message({name: entry.name}) :
-				{
-					...data,
-					resourceType: this._getResourceEntryType(entry),
-					performance: {
-						...data.performance,
-						size: entry.transferSize,
-						response: {
-							start: entry.responseStart,
-							end: entry.responseEnd
-						}
+			return {
+				...data,
+				name: entry.name || window.location.href,
+				resourceType: this._getResourceEntryType(entry),
+				performance: {
+					...data.performance,
+					size: entry.transferSize,
+					response: {
+						start: entry.responseStart,
+						end: entry.responseEnd
 					}
-				  };
+				}
+			};
 		}
 
 		if (entry.entryType === 'navigation') {
-			return this.params.pretty ?
-				message({
-					name: 'Document plus resources' || window.location.href,
-					duration: entry.domComplete,
-					text: `Document content took ${round(
-						entry.domContentLoadedEventEnd / 1000,
-						3
-					)} seconds.`
-				  }) :
-				{
-					...data,
-					readyState: document.readyState,
-					navigationType: entry.type,
-					performance: {
-						...data.performance,
-						size: entry.transferSize,
-						dom: {
-							complete: entry.domComplete,
-							contentLoaded: entry.domContentLoadedEventStart,
-							interactive: entry.domInteractive
-						}
+			return {
+				...data,
+				readyState: document.readyState,
+				navigationType: entry.type,
+				performance: {
+					...data.performance,
+					size: entry.transferSize,
+					dom: {
+						complete: entry.domComplete,
+						contentLoaded: entry.domContentLoadedEventStart,
+						interactive: entry.domInteractive
 					}
-				  };
+				}
+			};
 		}
 
 		if (entry.entryType === 'paint') {
-			return this.params.pretty ?
-				message({
-					name: entry.name || window.location.href,
-					duration: entry.startTime
-				  }) :
-				data;
+			return data;
 		}
+	}
+
+	_round(number) {
+		return round(number / 1000, 3);
+	}
+
+	/**
+	 * Observe new resource PerformanceEntries.
+	 * @returns {object}
+	 */
+	_watch() {
+		const PERFORMANCE_OBSERVER = new PerformanceObserver(list =>
+			this._handlePerformanceEntries(list)
+		);
+
+		PERFORMANCE_OBSERVER.observe({entryTypes: [...this.params.types]});
+
+		return this;
 	}
 }
