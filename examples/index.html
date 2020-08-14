@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+
+<html>
+    <head>
+        <title>Purrf</title>
+
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/4.5.0/css/bootstrap.min.css" integrity="sha512-rO2SXEKBSICa/AfyhEK5ZqWFCOok1rcgPYfGOqtX35OyiraBg6Xa4NnBJwXgpIRoXeWjcAmcQniMhp22htDc6g==" crossorigin="anonymous" />
+    </head>
+
+    <body>
+        <h1>Purrf</h1>
+        <a id="fetch" href="#">Click me</a>
+
+        <script src="../dist/index.min.js"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/jquery/3.5.1/jquery.min.js" integrity="sha512-bLT0Qm9VnAYZDflyKcBaQ2gg0hSYNQrJ8RilYldYQ1FxQYoCLtUjuuRuZo+fjqhx/qtq/1itJ0C2ejDxltZVFg==" crossorigin="anonymous"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/2.4.4/umd/popper.min.js" integrity="sha512-eUQ9hGdLjBjY3F41CScH3UX+4JDSI9zXeroz7hJ+RteoCaY+GP/LDoM8AO+Pt+DRFw3nXqsjh9Zsts8hnYv8/A==" crossorigin="anonymous"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/twitter-bootstrap/4.5.0/js/bootstrap.min.js" integrity="sha512-I5TkutApDjnWuX+smLIPZNhw+LhTd8WrQhdCKsxCFRSvhFx2km8ZfEpNIhF9nq04msHhOkE8BMOBj5QE07yhMA==" crossorigin="anonymous"></script>
+
+        <script>
+            const purrf = new Purrf({
+                format: 'json'
+            });
+
+            document.getElementById('fetch').addEventListener('click', async (e) => {
+                e.preventDefault();
+
+                const request = await fetch('https://jsonplaceholder.typicode.com/todos/1')
+                const response = await request.json();
+                
+                setTimeout(() => {
+                    const todo = document.createElement('div');
+                    const title = document.createElement('h4');
+                    title.innerHTML = response.title;
+
+                    todo.appendChild(title);
+                    document.body.appendChild(todo);
+
+                    purrf.measure('Todo is appended to the DOM', 'https://jsonplaceholder.typicode.com/todos/1');
+
+                    console.log(purrf.getEntries());
+                }, 2000);
+            })
+        </script>
+    </body>
+</html>
