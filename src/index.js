@@ -128,10 +128,10 @@ export default class Purrf {
 			return;
 		}
 
-		const entry = this._getLatestEntryByName(url);
+		const entry = url ? this._getLatestEntryByName(url) ?? {} : {};
 
 		if (!entry) {
-			throw new ReferenceError(`${url} is not a valid PerformanceEntry`);
+			console.warn(`${url} is not a valid PerformanceEntry. Timing for "${name}" will be based on document start time.`);
 		}
 
 		this.entries = [
@@ -346,13 +346,12 @@ export default class Purrf {
 
 	_processCustomEntry({entry, name, url} = {}) {
 		const now = performance.now();
-		const start = entry.startTime;
+		const start = entry.startTime ?? 0;
+		const duration = entry.duration ?? 0;
 		const end =
-			entry.entryType === 'resource' ?
-				entry.responseEnd :
-				entry.startTime + entry.duration;
+			entry.entryType === 'resource' ? entry.responseEnd : start + duration;
 		const totalTime = now - start;
-		const responseTime = entry.duration;
+		const responseTime = duration;
 		const renderTime = now - end;
 
 		return {
