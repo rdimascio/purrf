@@ -133,10 +133,11 @@ export default class Purrf {
 			return;
 		}
 
-		const entry = this._getLatestEntryByName(url) ?? this._getNavigationEntry();
+		const entry = this._getLatestEntryByName(url) ?? this._getNavigationEntry() ?? {};
 
 		if (!entry) {
 			console.warn(`${url} is not a valid PerformanceEntry. Timing for "${name}" will be based on document content loaded time.`);
+			console.log(`The current list of entries includes: ${this.entries}`);
 		}
 
 		this.entries = [
@@ -281,11 +282,13 @@ export default class Purrf {
 		}
 
 		return (
-			entries
-				// eslint-disable-next-line unicorn/no-reduce
-				.reduce((previous, current) =>
-					previous.responseEnd > current.responseEnd ? previous : current
-				)
+			entries.length < 2 ?
+				entries[0] :
+				entries
+					// eslint-disable-next-line unicorn/no-reduce
+					.reduce((previous, current) =>
+						previous.responseEnd > current.responseEnd ? previous : current
+					)
 		);
 	}
 
@@ -361,13 +364,17 @@ export default class Purrf {
 	}
 
 	_processCustomEntry({entry, name, url} = {}) {
+		if (typeof entry !== 'object') {
+			entry = {};
+		}
+
 		const now = performance.now();
 		const start = entry.startTime ?? 0;
 		const duration = entry.entryType === 'navigation' ?
-			entry.domContentLoadedEventEnd :
+			entry.domContentLoadedEventEnd ?? 0 :
 			(entry.duration ?? 0);
 		const end =
-			entry.entryType === 'resource' ? entry.responseEnd : start + duration;
+			entry.entryType === 'resource' ? entry.responseEnd ?? 0 : start + duration;
 		const totalTime = now - start;
 		const responseTime = duration;
 		const renderTime = now - end;
