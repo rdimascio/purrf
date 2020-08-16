@@ -372,21 +372,31 @@ export default class Purrf {
 		const responseTime = duration;
 		const renderTime = now - end;
 
-		return {
+		const entryObject = {
 			type: 'custom',
 			name,
 			device: this._getDeviceInfo(),
 			performance: {
 				url,
 				start,
-				end: now,
-				duration: {
+				end: now
+			}
+		};
+
+		entryObject.performance.duration =
+			entry.entryType === 'navigation' ?
+				{
+					total: renderTime,
+					response: 0,
+					render: renderTime
+				} :
+				{
 					total: totalTime,
 					response: responseTime,
 					render: renderTime
-				}
-			}
-		};
+				};
+
+		return entryObject;
 	}
 
 	/**
