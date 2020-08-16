@@ -80,6 +80,11 @@ export default class Purrf {
 	set entries(entries) {
 		const newSet = [...this._entries, ...entries];
 
+		if (entries.length === 1 && entries[0]?.type === 'custom') {
+			this._entries = newSet;
+			return;
+		}
+
 		this._entries = newSet.filter(
 			(entry, index, entries) =>
 				entries.findIndex(
@@ -128,10 +133,10 @@ export default class Purrf {
 			return;
 		}
 
-		const entry = url ? this._getLatestEntryByName(url) ?? {} : {};
+		const entry = this._getLatestEntryByName(url) ?? this._getNavigationEntry();
 
 		if (!entry) {
-			console.warn(`${url} is not a valid PerformanceEntry. Timing for "${name}" will be based on document start time.`);
+			console.warn(`${url} is not a valid PerformanceEntry. Timing for "${name}" will be based on document content loaded time.`);
 		}
 
 		this.entries = [
@@ -142,9 +147,9 @@ export default class Purrf {
 			})
 		];
 
-		if (this._hasLogged && this.params.log) {
-			this.log();
-		}
+		// If (this._hasLogged && this.params.log) {
+		// 	this.log();
+		// }
 
 		return this;
 	}
@@ -263,6 +268,10 @@ export default class Purrf {
 	 * @returns {object}
 	 */
 	_getLatestEntryByName(name) {
+		if (!name) {
+			return null;
+		}
+
 		const entries = window.performance
 			.getEntries()
 			.filter(entry => entry.name.includes(name));
@@ -299,6 +308,13 @@ export default class Purrf {
 		}
 
 		return entryTypes[entry.initiatorType] || 'Other';
+	}
+
+	_getNavigationEntry() {
+		return (
+			this.entries.find(entry => entry.entryType === 'navigation') ??
+			window.performance.getEntriesByType('navigation')[0]
+		);
 	}
 
 	/**
@@ -347,7 +363,9 @@ export default class Purrf {
 	_processCustomEntry({entry, name, url} = {}) {
 		const now = performance.now();
 		const start = entry.startTime ?? 0;
-		const duration = entry.duration ?? 0;
+		const duration = entry.entryType === 'navigation' ?
+			entry.domContentLoadedEventEnd :
+			(entry.duration ?? 0);
 		const end =
 			entry.entryType === 'resource' ? entry.responseEnd : start + duration;
 		const totalTime = now - start;
@@ -448,6 +466,7 @@ export default class Purrf {
 		if (entry.entryType === 'navigation') {
 			return {
 				...data,
+				name: window.location.href,
 				readyState: document.readyState,
 				navigationType: entry.type,
 				performance: {

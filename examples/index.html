@@ -24,22 +24,22 @@
             document.getElementById('fetch').addEventListener('click', async (e) => {
                 e.preventDefault();
 
-                const request = await fetch('https://jsonplaceholder.typicode.com/todos/1')
-                const response = await request.json();
+                // const request = await fetch('https://jsonplaceholder.typicode.com/todos/1')
+                // const response = await request.json();
                 
                 setTimeout(() => {
                     const todo = document.createElement('div');
                     const title = document.createElement('h4');
-                    title.innerHTML = response.title;
+                    title.innerHTML = 'YO';
 
                     todo.appendChild(title);
                     document.body.appendChild(todo);
 
-                    purrf.measure('Todo is appended to the DOM', 'https://jsonplaceholder.typicode.com/todos/1');
+                    purrf.measure('Todo is appended to the DOM');
 
                     console.log(purrf.getEntries());
                 }, 2000);
-            })
+            });
         </script>
     </body>
 </html>
